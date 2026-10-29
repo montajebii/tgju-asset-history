@@ -1,0 +1,61 @@
+name: Update dataset
+
+# Nightly crawl from tgju.org. Per-symbol failures are tolerated (a blocked
+# request must not wipe anything or break the run); validation gates the commit.
+# If tgju.org blocks GitHub's runner IPs, nothing is committed and the site
+# keeps serving the previous data — run the crawlers locally and push then.
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # 22:00 Tehran
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-dataset
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python3 -m pip install --quiet requests
+
+      - name: Crawl all symbols
+        run: |
+          set +e
+          failed=0
+          for f in crawlers/*_price_history.py; do
+            echo "::group::$f"
+            if ! python3 "$f"; then
+              echo "::warning file=$f::crawler failed — keeping previous data"
+              failed=$((failed+1))
+            fi
+            echo "::endgroup::"
+          done
+          echo "failed crawlers: $failed"
+          exit 0
+
+      - name: Validate
+        run: python3 tools/validate_csvs.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No changes since last run."
+          else
+            git commit -m "data: nightly update $(date -u +%F)"
+            git push
+          fi

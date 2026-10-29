@@ -1,0 +1,30 @@
+name: Release
+
+# Dataset snapshot: tag (e.g. v1.0.0) -> a zip of data/ attached to a release.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package datasets
+        run: |
+          mkdir -p dist
+          zip -j "dist/tgju-asset-history-${GITHUB_REF_NAME}.zip" data/*.csv
+          ls -lh dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            --generate-notes \
+            --title "Dataset $GITHUB_REF_NAME"
